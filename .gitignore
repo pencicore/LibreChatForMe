@@ -22,3 +22,94 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+# OS files
+
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor / IDE
+
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Logs
+
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependency directories
+
+node_modules/
+vendor/
+
+# Build outputs
+
+dist/
+build/
+out/
+target/
+coverage/
+
+# Environment variables
+
+.env
+.env.*
+!.env.example
+
+# Python
+
+**pycache**/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Java / Kotlin / Gradle / Maven
+
+.gradle/
+.mvn/
+*.class
+*.jar
+*.war
+*.ear
+
+# Go
+
+bin/
+*.test
+
+# Rust
+
+target/
+Cargo.lock
+
+# Temporary files
+
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Local config
+
+*.local
+*.cache
+.cache/

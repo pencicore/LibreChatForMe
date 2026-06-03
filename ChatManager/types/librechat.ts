@@ -1,0 +1,94 @@
+export type LibreChatUser = {
+  _id: string;
+  name?: string;
+  username?: string;
+  email: string;
+  emailVerified?: boolean;
+  disabled?: boolean;
+  provider?: string;
+  role?: string;
+  tenantId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastLoginAt?: string;
+  messageCount?: number;
+};
+
+export type UserStats = {
+  total: number;
+  active: number;
+  newToday: number;
+  disabled: number;
+  admins: number;
+  activeRate: number;
+  adminRate: number;
+};
+
+export type UsersListResponse = {
+  users: LibreChatUser[];
+  total: number;
+  page: number;
+  limit: number;
+  stats: UserStats;
+};
+
+export type BulkCreateResult = {
+  created: Array<{
+    email: string;
+    username: string;
+    name: string;
+    password: string;
+  }>;
+  duplicates: Array<{ email: string; username: string }>;
+};
+
+export type ConversationTab = 'ALL' | 'ACTIVE' | 'ARCHIVED';
+
+export type ConversationStats = {
+  all: number;
+  active: number;
+  archived: number;
+};
+
+export type ConversationListItem = {
+  conversationId: string;
+  title: string;
+  userId: string;
+  username?: string;
+  email?: string;
+  lastMessagePreview?: string;
+  lastMessageAt?: string;
+  messageCount: number;
+  model?: string;
+  endpoint?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  archived?: boolean;
+  tags?: string[];
+  chatManagerNotes?: string;
+};
+
+export type LibreChatMessage = {
+  _id: string;
+  messageId: string;
+  conversationId: string;
+  user: string;
+  sender?: string;
+  text?: string;
+  content?: unknown[];
+  summary?: string;
+  model?: string;
+  isCreatedByUser?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  displayText?: string;
+  thinkingText?: string;
+  extras?: string[];
+};
+
+export type ConversationDetail = ConversationListItem & {
+  messages: LibreChatMessage[];
+  messagePage: number;
+  messagePages: number;
+  messageTotal: number;
+};
