@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { repairAllLegacyBanRecords } from '@/lib/ban';
+import { clearAllIpBanCaches, repairAllLegacyBanRecords } from '@/lib/ban';
+import { clearLoginRateLimitArtifacts } from '@/lib/login-limits';
 import { collections } from '@/lib/db';
 import { requireAdminToken } from '@/lib/auth';
 
@@ -10,9 +11,11 @@ export async function GET(request: Request) {
   }
 
   const { users } = await collections();
-  const [userCount, legacyBansFixed] = await Promise.all([
+  const [userCount, legacyBansFixed, ipBanCachesCleared, loginLimits] = await Promise.all([
     users.estimatedDocumentCount(),
     repairAllLegacyBanRecords(),
+    clearAllIpBanCaches(),
+    clearLoginRateLimitArtifacts(),
   ]);
 
   return NextResponse.json({
@@ -20,5 +23,8 @@ export async function GET(request: Request) {
     database: 'connected',
     users: userCount,
     legacyBansFixed,
+    ipBanCachesCleared,
+    loginLimits,
+    note: '若仍提示登录次数过多，请重启 LibreChat 后端（限流计数在进程内存中）',
   });
 }

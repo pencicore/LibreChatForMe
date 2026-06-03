@@ -52,6 +52,9 @@ npm run dev
 - 统计总用户、活跃、今日新增、禁用、管理员
 - 聊天记录三栏管理（会话列表 / 消息详情 / 会话元数据），直连 `conversations` 与 `messages` 集合
 
-访问路径：
-- 账户管理：http://localhost:3000
-- 聊天记录：http://localhost:3000/chat-records
+# 可选
+
+刷新缓存（登陆限流后可以使用）
+```shell
+npm run flush-cache
+```

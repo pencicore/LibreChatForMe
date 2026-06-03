@@ -1,3 +1,4 @@
+import { clearLoginRateLimitArtifacts } from '@/lib/login-limits';
 import { collections } from '@/lib/db';
 
 /** LibreChat CacheKeys.BANS — Keyv 键前缀 */
@@ -37,14 +38,17 @@ export type BanRecord = {
   violation_count: number;
   duration: number;
   expiresAt: number;
+  /** 供解禁时清理关联的 IP 缓存 */
+  user_id?: string;
 };
 
-export function buildBanRecord(durationMs = getAdminBanDurationMs()): BanRecord {
+export function buildBanRecord(userId: string, durationMs = getAdminBanDurationMs()): BanRecord {
   return {
     type: 'ban',
     violation_count: 1,
     duration: durationMs,
     expiresAt: Date.now() + durationMs,
+    user_id: userId,
   };
 }
 
@@ -96,10 +100,57 @@ function parseKeyvBanRecord(raw: unknown): BanRecord | null {
   return null;
 }
 
+/** 判断是否为 LibreChat 按 IP 写入的 ban / BANS 键（非用户 ObjectId） */
+function isIpBanKey(key: string): boolean {
+  const suffix = key.startsWith('BANS:') ? key.slice(5) : key.startsWith('ban:') ? key.slice(4) : '';
+
+  if (!suffix || key.startsWith('ban:ban_cache:')) {
+    return false;
+  }
+
+  if (/^[a-f\d]{24}$/i.test(suffix)) {
+    return false;
+  }
+
+  return suffix.includes('.') || suffix.includes(':');
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** 清理共享 IP 上的 ban 缓存（导致「禁一个、全员不能登录」） */
+async function clearIpBanCaches(): Promise<number> {
+  const { logs } = await collections();
+  const candidates = await logs
+    .find({ key: { $regex: /^(ban:|BANS:)/ } })
+    .project({ key: 1 })
+    .toArray();
+
+  const ipKeys = candidates.map((doc) => String(doc.key)).filter(isIpBanKey);
+  if (ipKeys.length === 0) {
+    return 0;
+  }
+
+  const result = await logs.deleteMany({ key: { $in: ipKeys } });
+  return result.deletedCount;
+}
+
+/** 删除 value 序列化内容中包含该 userId 的封禁记录 */
+async function clearBanRecordsReferencingUser(userId: string): Promise<number> {
+  const { logs } = await collections();
+  const pattern = escapeRegex(userId);
+  const result = await logs.deleteMany({
+    key: { $regex: /^(ban:|BANS:)/ },
+    value: { $regex: pattern },
+  });
+  return result.deletedCount;
+}
+
 async function writeBanRecord(userId: string): Promise<void> {
   const { logs } = await collections();
   const durationMs = getAdminBanDurationMs();
-  const banRecord = buildBanRecord(durationMs);
+  const banRecord = buildBanRecord(userId, durationMs);
   const key = bansKey(userId);
 
   await logs.updateOne(
@@ -150,7 +201,7 @@ export async function migrateBansFromKeyvCollection(): Promise<number> {
 
     const record = parseKeyvBanRecord(doc.value);
     const durationMs = record?.duration ?? getAdminBanDurationMs();
-    const banRecord = record ?? buildBanRecord(durationMs);
+    const banRecord = record ?? buildBanRecord(userId, durationMs);
     const key = bansKey(userId);
 
     await logs.updateOne(
@@ -177,9 +228,10 @@ export async function migrateBansFromKeyvCollection(): Promise<number> {
 /** 扫描并修复所有旧格式封禁记录 */
 export async function repairAllLegacyBanRecords(): Promise<number> {
   const migrated = await migrateBansFromKeyvCollection();
+  const ipCleared = await clearIpBanCaches();
   const { logs } = await collections();
   const docs = await logs.find({ key: { $regex: '^BANS:' } }).toArray();
-  let fixed = migrated;
+  let fixed = migrated + ipCleared;
 
   for (const doc of docs) {
     const userId = String(doc.key).replace(/^BANS:/, '');
@@ -211,12 +263,25 @@ export async function banUser(userId: string): Promise<void> {
   await writeBanRecord(userId);
 }
 
-/** 解除封禁并清理 checkBan 可能写入的缓存键 */
+/**
+ * 解除封禁并清理 checkBan 写入的缓存。
+ * 必须清理 IP 级缓存（如 ban:::1），否则同 IP 的其他用户仍无法登录。
+ */
 export async function unbanUser(userId: string): Promise<void> {
   const { logs } = await collections();
+
   await logs.deleteMany({
     key: { $in: [bansKey(userId), banCacheKey(userId), banCacheRedisKey(userId)] },
   });
+
+  await clearBanRecordsReferencingUser(userId);
+  await clearIpBanCaches();
+  await clearLoginRateLimitArtifacts();
+}
+
+/** 紧急修复：清除所有 IP 级封禁缓存（不影响按用户 ID 的 BANS 记录） */
+export async function clearAllIpBanCaches(): Promise<number> {
+  return clearIpBanCaches();
 }
 
 export async function isUserBanned(userId: string): Promise<boolean> {
