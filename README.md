@@ -57,3 +57,16 @@ npm run dev
 ```shell
 npm run flush-cache
 ```
+
+# 功能
+**用户管理界面**
+![用户管理界面](ChatManager/image/manager-account.png)
+
+**对话管理界面**
+![对话管理界面](ChatManager/image/manager-chat.png)
+
+**禁用账号**
+
+**批量生产账号**
+
+**导出全部聊天记录**
