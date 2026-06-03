@@ -14,9 +14,50 @@ const defaultBulkForm = {
   count: 10,
   startIndex: 1,
   password: 'Contest@2026',
+  randomPassword: false,
   namePrefix: '选手 ',
   tenantId: '',
 };
+
+function csvEscape(value: string) {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+type BulkFormState = typeof defaultBulkForm;
+
+const bulkStepLabels = ['填写参数', '预览确认', '创建完成'] as const;
+
+function bulkAccountPreview(form: BulkFormState) {
+  const start = form.startIndex;
+  const end = form.startIndex + Math.max(form.count, 1) - 1;
+  const prefix = form.prefix.trim() || 'contestant';
+  const domain = form.domain.trim() || 'competition.local';
+
+  return {
+    first: `${prefix}${start}@${domain}`,
+    last: `${prefix}${end}@${domain}`,
+    count: form.count,
+  };
+}
+
+function downloadBulkAccountsCsv(accounts: CreatedUser[]) {
+  const header = 'email,username,name,password';
+  const rows = accounts.map(
+    (user) =>
+      `${csvEscape(user.email)},${csvEscape(user.username)},${csvEscape(user.name)},${csvEscape(user.password)}`,
+  );
+  const content = `\uFEFF${[header, ...rows].join('\n')}`;
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `bulk-accounts-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 function relativeTime(value?: string) {
   if (!value) {
@@ -151,6 +192,10 @@ export function AccountManagement() {
     return Math.max(stats.newToday - 23, 0);
   }, [stats]);
 
+  const bulkPreviewSample = useMemo(() => bulkAccountPreview(bulkForm), [bulkForm]);
+
+  const bulkStepIndex = bulkStep === 'form' ? 0 : bulkStep === 'preview' ? 1 : 2;
+
   function bulkPayload() {
     return {
       ...bulkForm,
@@ -199,6 +244,9 @@ export function AccountManagement() {
 
       setCreatedUsers(result.created);
       setBulkStep('done');
+      if (bulkForm.randomPassword && result.created.length > 0) {
+        downloadBulkAccountsCsv(result.created);
+      }
       setMessage(`成功创建 ${result.created.length} 个账号${result.duplicates.length ? `，跳过 ${result.duplicates.length} 个重复邮箱` : ''}`);
       await refresh();
     } catch (err) {
@@ -658,81 +706,185 @@ export function AccountManagement() {
       {showBulkModal ? (
         <div className="modal-backdrop" onClick={closeBulkModal}>
           <div
-            className={bulkStep === 'preview' ? 'modal modal-wide' : 'modal'}
+            className={bulkStep === 'preview' ? 'modal modal-wide bulk-modal' : 'modal bulk-modal'}
             onClick={(event) => event.stopPropagation()}
           >
-            <h2>批量创建用户</h2>
+            <div className="bulk-modal-header">
+              <div>
+                <h2>批量创建用户</h2>
+                <p>
+                  {bulkStep === 'form'
+                    ? '按规则批量生成账号，预览确认后写入数据库。'
+                    : bulkStep === 'preview'
+                      ? '请核对下方列表，确认后将写入数据库。'
+                      : '创建完成，请妥善保存账户信息。'}
+                </p>
+              </div>
+              <button
+                aria-label="关闭"
+                className="bulk-modal-close"
+                type="button"
+                onClick={closeBulkModal}
+              >
+                ×
+              </button>
+            </div>
+
+            <ol className="bulk-steps" aria-label="创建步骤">
+              {bulkStepLabels.map((label, index) => (
+                <li
+                  key={label}
+                  className={
+                    index < bulkStepIndex ? 'done' : index === bulkStepIndex ? 'active' : undefined
+                  }
+                >
+                  <span>{index + 1}</span>
+                  {label}
+                </li>
+              ))}
+            </ol>
+
             {bulkStep === 'form' ? (
-              <>
-                <p>填写参数后生成预览，确认无误再写入数据库。</p>
-                <form className="modal-form" onSubmit={handleBulkPreview}>
-                  <label>
-                    账号前缀
-                    <input value={bulkForm.prefix} onChange={(event) => setBulkForm({ ...bulkForm, prefix: event.target.value })} />
-                  </label>
-                  <label>
-                    邮箱域名
-                    <input value={bulkForm.domain} onChange={(event) => setBulkForm({ ...bulkForm, domain: event.target.value })} />
-                  </label>
-                  <label>
-                    创建数量
-                    <input
-                      min={1}
-                      max={1000}
-                      type="number"
-                      value={bulkForm.count}
-                      onChange={(event) => setBulkForm({ ...bulkForm, count: Number(event.target.value) })}
-                    />
-                  </label>
-                  <label>
-                    起始编号
-                    <input
-                      min={1}
-                      type="number"
-                      value={bulkForm.startIndex}
-                      onChange={(event) => setBulkForm({ ...bulkForm, startIndex: Number(event.target.value) })}
-                    />
-                  </label>
-                  <label>
-                    统一密码
-                    <input
-                      value={bulkForm.password}
-                      onChange={(event) => setBulkForm({ ...bulkForm, password: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    姓名前缀
-                    <input
-                      value={bulkForm.namePrefix}
-                      onChange={(event) => setBulkForm({ ...bulkForm, namePrefix: event.target.value })}
-                    />
-                  </label>
-                  <label className="full">
-                    Tenant ID（可选）
-                    <input
-                      value={bulkForm.tenantId}
-                      onChange={(event) => setBulkForm({ ...bulkForm, tenantId: event.target.value })}
-                    />
-                  </label>
-                  <div className="modal-actions full">
-                    <button className="ghost-button" type="button" onClick={closeBulkModal}>
-                      取消
+              <form className="bulk-form" onSubmit={handleBulkPreview}>
+                <section className="bulk-section">
+                  <h3>账号规则</h3>
+                  <div className="bulk-grid">
+                    <label>
+                      账号前缀
+                      <input
+                        value={bulkForm.prefix}
+                        onChange={(event) => setBulkForm({ ...bulkForm, prefix: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      邮箱域名
+                      <input
+                        value={bulkForm.domain}
+                        onChange={(event) => setBulkForm({ ...bulkForm, domain: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      创建数量
+                      <input
+                        min={1}
+                        max={1000}
+                        type="number"
+                        value={bulkForm.count}
+                        onChange={(event) => setBulkForm({ ...bulkForm, count: Number(event.target.value) })}
+                      />
+                    </label>
+                    <label>
+                      起始编号
+                      <input
+                        min={1}
+                        type="number"
+                        value={bulkForm.startIndex}
+                        onChange={(event) =>
+                          setBulkForm({ ...bulkForm, startIndex: Number(event.target.value) })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="bulk-sample">
+                    将生成 <code>{bulkPreviewSample.count}</code> 个账号，例如{' '}
+                    <code>{bulkPreviewSample.first}</code>
+                    {bulkPreviewSample.count > 1 ? (
+                      <>
+                        {' '}
+                        至 <code>{bulkPreviewSample.last}</code>
+                      </>
+                    ) : null}
+                  </p>
+                </section>
+
+                <section className="bulk-section">
+                  <h3>密码策略</h3>
+                  <div className="password-mode-group" role="group" aria-label="密码策略">
+                    <button
+                      className={`password-mode-card${bulkForm.randomPassword ? '' : ' active'}`}
+                      type="button"
+                      onClick={() => setBulkForm({ ...bulkForm, randomPassword: false })}
+                    >
+                      <strong>统一密码</strong>
+                      <span>所有账号使用相同密码</span>
                     </button>
-                    <button className="primary-button" disabled={busy} type="submit">
-                      生成预览
+                    <button
+                      className={`password-mode-card${bulkForm.randomPassword ? ' active' : ''}`}
+                      type="button"
+                      onClick={() => setBulkForm({ ...bulkForm, randomPassword: true })}
+                    >
+                      <strong>随机密码</strong>
+                      <span>每位用户独立，创建后自动下载 CSV</span>
                     </button>
                   </div>
-                </form>
-              </>
+                  {bulkForm.randomPassword ? (
+                    <p className="bulk-note">创建成功后将自动下载包含邮箱、用户名和密码的 CSV 文件。</p>
+                  ) : (
+                    <label className="bulk-password-field">
+                      统一密码
+                      <input
+                        value={bulkForm.password}
+                        onChange={(event) => setBulkForm({ ...bulkForm, password: event.target.value })}
+                        placeholder="至少 8 位"
+                      />
+                    </label>
+                  )}
+                </section>
+
+                <section className="bulk-section">
+                  <h3>显示信息</h3>
+                  <div className="bulk-grid">
+                    <label>
+                      姓名前缀
+                      <input
+                        value={bulkForm.namePrefix}
+                        onChange={(event) => setBulkForm({ ...bulkForm, namePrefix: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span className="bulk-label-row">
+                        Tenant ID <em className="field-optional">可选</em>
+                      </span>
+                      <input
+                        value={bulkForm.tenantId}
+                        onChange={(event) => setBulkForm({ ...bulkForm, tenantId: event.target.value })}
+                        placeholder="留空则不设置"
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                <div className="modal-actions bulk-modal-actions">
+                  <button className="ghost-button" type="button" onClick={closeBulkModal}>
+                    取消
+                  </button>
+                  <button className="primary-button" disabled={busy} type="submit">
+                    下一步：生成预览
+                  </button>
+                </div>
+              </form>
             ) : null}
 
             {bulkStep === 'preview' && bulkPreview ? (
               <>
-                <p className="preview-summary">
-                  共 {bulkPreview.summary.total} 个账号，将创建{' '}
-                  <strong className="text-green">{bulkPreview.summary.newCount}</strong> 个，跳过{' '}
-                  <strong className="text-muted">{bulkPreview.summary.duplicateCount}</strong> 个已存在
-                </p>
+                <div className="bulk-summary-cards">
+                  <div className="bulk-summary-card">
+                    <span>总计</span>
+                    <strong>{bulkPreview.summary.total}</strong>
+                  </div>
+                  <div className="bulk-summary-card green">
+                    <span>将创建</span>
+                    <strong>{bulkPreview.summary.newCount}</strong>
+                  </div>
+                  <div className="bulk-summary-card muted">
+                    <span>已存在</span>
+                    <strong>{bulkPreview.summary.duplicateCount}</strong>
+                  </div>
+                  <div className="bulk-summary-card">
+                    <span>密码</span>
+                    <strong>{bulkForm.randomPassword ? '随机' : '统一'}</strong>
+                  </div>
+                </div>
                 <div className="preview-table-wrap">
                   <table className="preview-table">
                     <thead>
@@ -761,7 +913,7 @@ export function AccountManagement() {
                     </tbody>
                   </table>
                 </div>
-                <div className="modal-actions full">
+                <div className="modal-actions bulk-modal-actions">
                   <button className="ghost-button" type="button" onClick={() => setBulkStep('form')}>
                     返回修改
                   </button>
@@ -771,7 +923,7 @@ export function AccountManagement() {
                     type="button"
                     onClick={() => void handleBulkConfirm()}
                   >
-                    确认创建 ({bulkPreview.summary.newCount})
+                    确认创建 {bulkPreview.summary.newCount} 个账号
                   </button>
                 </div>
                 {bulkPreview.summary.newCount === 0 ? (
@@ -782,13 +934,52 @@ export function AccountManagement() {
 
             {bulkStep === 'done' ? (
               <>
-                <p className="preview-summary success">账号已创建，可复制下方列表分发给选手。</p>
+                <div className="bulk-done-banner">
+                  <span className="bulk-done-icon">✓</span>
+                  <div>
+                    <strong>已成功创建 {createdUsers.length} 个账号</strong>
+                    <p>
+                      {bulkForm.randomPassword
+                        ? '账户列表已自动下载，请妥善保管 CSV 文件。'
+                        : '请复制下方内容或通过导出分发给选手。'}
+                    </p>
+                  </div>
+                </div>
+                <div className="created-output-toolbar">
+                  <span>账户列表（邮箱, 用户名, 姓名, 密码）</span>
+                  <div className="created-output-actions">
+                    {bulkForm.randomPassword && createdUsers.length > 0 ? (
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        onClick={() => downloadBulkAccountsCsv(createdUsers)}
+                      >
+                        下载 CSV
+                      </button>
+                    ) : null}
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => {
+                        const text = createdUsers
+                          .map((user) => `${user.email},${user.username},${user.name},${user.password}`)
+                          .join('\n');
+                        void navigator.clipboard.writeText(text);
+                        setMessage('已复制到剪贴板');
+                      }}
+                    >
+                      复制全部
+                    </button>
+                  </div>
+                </div>
                 <textarea
                   className="created-output"
                   readOnly
-                  value={createdUsers.map((user) => `${user.email},${user.username},${user.password}`).join('\n')}
+                  value={createdUsers
+                    .map((user) => `${user.email},${user.username},${user.name},${user.password}`)
+                    .join('\n')}
                 />
-                <div className="modal-actions full">
+                <div className="modal-actions bulk-modal-actions">
                   <button className="primary-button" type="button" onClick={closeBulkModal}>
                     完成
                   </button>

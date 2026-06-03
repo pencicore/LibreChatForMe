@@ -38,6 +38,7 @@ export type BulkCreateInput = {
   count: number;
   startIndex: number;
   password: string;
+  randomPassword?: boolean;
   namePrefix: string;
   role: string;
   emailVerified: boolean;

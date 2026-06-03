@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { ObjectId, type Document } from 'mongodb';
 import { banUser, unbanUser } from '@/lib/ban';
 import { collections } from '@/lib/db';
@@ -18,17 +19,50 @@ export type BulkCreateBody = {
   count?: number;
   startIndex?: number;
   password?: string;
+  randomPassword?: boolean;
   namePrefix?: string;
   role?: string;
   emailVerified?: boolean;
   tenantId?: string;
 };
 
+const RANDOM_PASSWORD_CHARS = {
+  lower: 'abcdefghjkmnpqrstuvwxyz',
+  upper: 'ABCDEFGHJKMNPQRSTUVWXYZ',
+  digit: '23456789',
+  symbol: '!@#$%&*',
+};
+
+export function generateRandomPassword(length = 12): string {
+  const pools = [
+    RANDOM_PASSWORD_CHARS.lower,
+    RANDOM_PASSWORD_CHARS.upper,
+    RANDOM_PASSWORD_CHARS.digit,
+    RANDOM_PASSWORD_CHARS.symbol,
+  ];
+  const allChars = pools.join('');
+  const bytes = randomBytes(length);
+  const required = pools.map((pool) => pool[bytes[0] % pool.length]);
+  const rest = Array.from({ length: length - required.length }, (_, index) => {
+    const offset = index + 1;
+    return allChars[bytes[offset % bytes.length] % allChars.length];
+  });
+
+  const chars = [...required, ...rest];
+  for (let index = chars.length - 1; index > 0; index -= 1) {
+    const swapIndex = bytes[index % bytes.length] % (index + 1);
+    [chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]];
+  }
+
+  return chars.join('');
+}
+
 export function parseBulkCreateInput(body: BulkCreateBody): BulkCreateInput {
   const prefix = body.prefix?.trim().toLowerCase() || 'contestant';
   const domain = body.domain?.trim().toLowerCase() || 'competition.local';
   const count = Number(body.count);
   const startIndex = Number(body.startIndex || 1);
+  const randomPassword = body.randomPassword === true;
   const password = body.password?.trim() ?? '';
 
   if (!Number.isInteger(count) || count < 1 || count > 1000) {
@@ -39,7 +73,7 @@ export function parseBulkCreateInput(body: BulkCreateBody): BulkCreateInput {
     throw new Error('startIndex must be a positive integer');
   }
 
-  if (!password || password.length < 8 || password.length > 128) {
+  if (!randomPassword && (!password || password.length < 8 || password.length > 128)) {
     throw new Error('password must be 8-128 characters');
   }
 
@@ -48,7 +82,8 @@ export function parseBulkCreateInput(body: BulkCreateBody): BulkCreateInput {
     domain,
     count,
     startIndex,
-    password,
+    password: randomPassword ? '' : password,
+    randomPassword,
     namePrefix: body.namePrefix?.trim() || '选手 ',
     role: body.role?.trim() || 'USER',
     emailVerified: body.emailVerified ?? true,
@@ -294,7 +329,6 @@ export async function listUsers(options: {
 export async function createCompetitionUsers(input: BulkCreateInput): Promise<BulkCreateResult> {
   const { users } = await collections();
   const now = new Date();
-  const passwordHash = await bcrypt.hash(input.password, 10);
   const drafts = buildCompetitionUserDrafts(input);
 
   if (drafts.length === 0) {
@@ -302,14 +336,32 @@ export async function createCompetitionUsers(input: BulkCreateInput): Promise<Bu
   }
 
   const existingEmails = await findExistingEmails(drafts.map((doc) => doc.email));
+  const creatableDrafts = drafts.filter((draft) => !existingEmails.has(draft.email));
 
-  const docs = drafts.map((draft) => ({
+  if (creatableDrafts.length === 0) {
+    return {
+      created: [],
+      duplicates: drafts
+        .filter((draft) => existingEmails.has(draft.email))
+        .map((draft) => ({ email: draft.email, username: draft.username })),
+    };
+  }
+
+  const plainPasswords = input.randomPassword
+    ? creatableDrafts.map(() => generateRandomPassword())
+    : creatableDrafts.map(() => input.password);
+
+  const passwordHashes = input.randomPassword
+    ? await Promise.all(plainPasswords.map((password) => bcrypt.hash(password, 10)))
+    : [await bcrypt.hash(input.password, 10)];
+
+  const docs = creatableDrafts.map((draft, index) => ({
     name: draft.name,
     username: draft.username,
     email: draft.email,
     emailVerified: input.emailVerified,
     disabled: false,
-    password: passwordHash,
+    password: input.randomPassword ? passwordHashes[index] : passwordHashes[0],
     provider: 'local',
     role: input.role,
     termsAccepted: true,
@@ -321,22 +373,18 @@ export async function createCompetitionUsers(input: BulkCreateInput): Promise<Bu
     updatedAt: now,
   }));
 
-  const creatable = docs.filter((doc) => !existingEmails.has(doc.email));
-
-  if (creatable.length > 0) {
-    await users.insertMany(creatable, { ordered: false });
-  }
+  await users.insertMany(docs, { ordered: false });
 
   return {
-    created: creatable.map((doc) => ({
-      email: doc.email,
-      username: doc.username,
-      name: doc.name,
-      password: input.password,
+    created: creatableDrafts.map((draft, index) => ({
+      email: draft.email,
+      username: draft.username,
+      name: draft.name,
+      password: plainPasswords[index],
     })),
-    duplicates: docs
-      .filter((doc) => existingEmails.has(doc.email))
-      .map((doc) => ({ email: doc.email, username: doc.username })),
+    duplicates: drafts
+      .filter((draft) => existingEmails.has(draft.email))
+      .map((draft) => ({ email: draft.email, username: draft.username })),
   };
 }
 
