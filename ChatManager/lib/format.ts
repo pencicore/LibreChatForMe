@@ -17,6 +17,14 @@ export function formatDateTime(value?: string | Date) {
   }).format(new Date(value));
 }
 
+export function formatCount(value?: number | null) {
+  if (value == null || Number.isNaN(value)) {
+    return '-';
+  }
+
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
 export function formatTime(value?: string | Date) {
   if (!value) {
     return '-';

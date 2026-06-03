@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { ObjectId, type Document } from 'mongodb';
+import { banUser, unbanUser } from '@/lib/ban';
 import { collections } from '@/lib/db';
 import { formatUserId as formatDisplayUserId } from '@/lib/format';
 import { escapeRegex, jsonDate, startOfToday } from '@/lib/http';
@@ -367,8 +368,13 @@ export async function updateUserById(
   if (typeof update.disabled === 'boolean') {
     payload.disabled = update.disabled;
     if (update.disabled) {
-      await sessions.deleteMany({ user: objectId });
+      await Promise.all([
+        banUser(objectId.toString()),
+        sessions.deleteMany({ user: objectId }),
+      ]);
       payload.refreshToken = [];
+    } else {
+      await unbanUser(objectId.toString());
     }
   }
 
@@ -392,6 +398,7 @@ export async function deleteUserById(id: string) {
   const userId = objectId.toString();
 
   await Promise.all([
+    unbanUser(userId),
     messages.deleteMany({ user: userId }),
     sessions.deleteMany({ user: objectId }),
     users.deleteOne({ _id: objectId }),

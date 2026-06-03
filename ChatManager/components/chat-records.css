@@ -59,36 +59,62 @@
 }
 
 .chat-tabs {
-  gap: 0;
   margin: 0 20px;
-  padding: 0 8px;
+  padding: 0 20px;
   display: flex;
+  align-items: flex-end;
+  gap: 40px;
   background: #fff;
   border-left: 1px solid #e2e7f0;
   border-right: 1px solid #e2e7f0;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .chat-tab {
-  color: #647084;
+  color: #4a5870;
   background: none;
   border: 0;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 600;
+  margin: 0 0 -1px;
+  padding: 14px 0 12px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.chat-tab:hover:not(.active) {
+  color: #172033;
 }
 
 .chat-tab.active {
-  color: #1262ff;
-  border-bottom-color: #1262ff;
+  border-bottom-color: #1677ff;
 }
 
-.chat-tab span {
-  color: #9aa6b8;
-  margin-left: 6px;
-  font-size: 11px;
+.chat-tab-label {
+  font-weight: 400;
+}
+
+.chat-tab.active .chat-tab-label {
+  color: #1677ff;
   font-weight: 500;
+}
+
+.chat-tab-count {
+  color: #172033;
+  font-size: 14px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-tab.active .chat-tab-count {
+  color: #172033;
 }
 
 .chat-workspace {
@@ -521,6 +547,17 @@
 }
 
 @media (max-width: 900px) {
+  .chat-tabs {
+    gap: 20px;
+    padding: 0 12px;
+    overflow-x: auto;
+  }
+
+  .chat-tab {
+    flex-shrink: 0;
+    font-size: 13px;
+  }
+
   .chat-filter-bar .filter-actions {
     margin-left: 0;
     width: 100%;

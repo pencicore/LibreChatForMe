@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { MessageBody } from '@/components/MessageBody';
-import { formatDateTime, formatTime, formatUserId } from '@/lib/format';
+import { formatCount, formatDateTime, formatTime, formatUserId } from '@/lib/format';
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -319,7 +319,7 @@ export function ChatRecordsManagement() {
           </form>
         </div>
 
-        <div className="chat-tabs">
+        <nav className="chat-tabs" aria-label="会话分类">
           {(
             [
               ['ALL', '全部会话', stats?.all],
@@ -331,16 +331,17 @@ export function ChatRecordsManagement() {
               key={key}
               className={tab === key ? 'chat-tab active' : 'chat-tab'}
               type="button"
+              aria-current={tab === key ? 'page' : undefined}
               onClick={() => {
                 setTab(key);
                 setPage(1);
               }}
             >
-              {label}
-              <span>{count ?? '-'}</span>
+              <span className="chat-tab-label">{label}</span>
+              <span className="chat-tab-count">{formatCount(count)}</span>
             </button>
           ))}
-        </div>
+        </nav>
 
         <div className="chat-workspace">
           <section className="convo-panel">

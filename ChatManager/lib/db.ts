@@ -38,7 +38,7 @@ export async function connectDb() {
   return cached.conn;
 }
 
-export async function collections() {
+export async function getDb() {
   const connection = await connectDb();
   const db = connection.connection.db;
 
@@ -46,10 +46,20 @@ export async function collections() {
     throw new Error('MongoDB connection is not ready');
   }
 
+  return db;
+}
+
+export async function collections() {
+  const db = await getDb();
+
   return {
     users: db.collection('users'),
     conversations: db.collection('conversations'),
     messages: db.collection('messages'),
     sessions: db.collection('sessions'),
+    /** LibreChat keyvMongo 默认集合（BAN 等违规日志），非 keyv */
+    logs: db.collection('logs'),
+    /** 旧版 ChatManager 误写的封禁记录，迁移后删除 */
+    legacyKeyv: db.collection('keyv'),
   };
 }
