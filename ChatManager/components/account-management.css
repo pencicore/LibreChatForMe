@@ -277,6 +277,81 @@ th {
   font-size: 12px;
 }
 
+.modal-wide {
+  width: min(720px, 100%);
+}
+
+.preview-summary {
+  color: #4a5870;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.preview-summary.success {
+  color: #0f766e;
+}
+
+.preview-summary .text-green {
+  color: #10a652;
+}
+
+.preview-summary .text-muted {
+  color: #9aa6b8;
+}
+
+.preview-hint {
+  color: #c5222a;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+.preview-table-wrap {
+  border: 1px solid #e7ebf2;
+  border-radius: 8px;
+  max-height: 320px;
+  margin-bottom: 14px;
+  overflow: auto;
+}
+
+.preview-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 520px;
+}
+
+.preview-table th,
+.preview-table td {
+  text-align: left;
+  border-bottom: 1px solid #eef2f7;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.preview-table th {
+  color: #4a5870;
+  background: #f8faff;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+}
+
+.preview-tag {
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.preview-tag.new {
+  color: #10a652;
+  background: #eaf8ee;
+}
+
+.preview-tag.dup {
+  color: #9aa6b8;
+  background: #f0f3f7;
+}
+
 .created-output {
   resize: vertical;
   min-height: 90px;

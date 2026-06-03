@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAdminToken } from '@/lib/auth';
-import { createCompetitionUsers, parseBulkCreateInput, type BulkCreateBody } from '@/lib/users';
+import { parseBulkCreateInput, previewCompetitionUsers, type BulkCreateBody } from '@/lib/users';
 
 export async function POST(request: Request) {
   const unauthorized = requireAdminToken(request);
@@ -11,8 +11,8 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as BulkCreateBody;
     const input = parseBulkCreateInput(body);
-    const result = await createCompetitionUsers(input);
-    return NextResponse.json(result, { status: 201 });
+    const preview = await previewCompetitionUsers(input);
+    return NextResponse.json(preview);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request';
     return NextResponse.json({ error: message }, { status: 400 });

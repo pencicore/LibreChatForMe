@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BulkCreateResult, LibreChatUser, UserStats } from '@/types/librechat';
+import type { BulkCreatePreview, BulkCreateResult, LibreChatUser, UserStats } from '@/types/librechat';
 import { AppShell } from '@/components/AppShell';
 import { formatDateTime, formatUserId } from '@/lib/format';
 import './account-management.css';
@@ -68,6 +68,8 @@ export function AccountManagement() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkStep, setBulkStep] = useState<'form' | 'preview' | 'done'>('form');
+  const [bulkPreview, setBulkPreview] = useState<BulkCreatePreview | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [bulkForm, setBulkForm] = useState(defaultBulkForm);
   const [createdUsers, setCreatedUsers] = useState<CreatedUser[]>([]);
@@ -149,8 +151,42 @@ export function AccountManagement() {
     return Math.max(stats.newToday - 23, 0);
   }, [stats]);
 
-  async function handleBulkCreate(event: FormEvent) {
+  function bulkPayload() {
+    return {
+      ...bulkForm,
+      role: 'USER',
+      emailVerified: true,
+      tenantId: bulkForm.tenantId || undefined,
+    };
+  }
+
+  function closeBulkModal() {
+    setShowBulkModal(false);
+    setBulkStep('form');
+    setBulkPreview(null);
+    setCreatedUsers([]);
+  }
+
+  async function handleBulkPreview(event: FormEvent) {
     event.preventDefault();
+    setBusy(true);
+    setError('');
+
+    try {
+      const preview = await apiFetch<BulkCreatePreview>('/api/users/bulk/preview', {
+        method: 'POST',
+        body: JSON.stringify(bulkPayload()),
+      });
+      setBulkPreview(preview);
+      setBulkStep('preview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成预览失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleBulkConfirm() {
     setBusy(true);
     setError('');
     setMessage('');
@@ -158,15 +194,11 @@ export function AccountManagement() {
     try {
       const result = await apiFetch<BulkCreateResult>('/api/users/bulk', {
         method: 'POST',
-        body: JSON.stringify({
-          ...bulkForm,
-          role: 'USER',
-          emailVerified: true,
-          tenantId: bulkForm.tenantId || undefined,
-        }),
+        body: JSON.stringify(bulkPayload()),
       });
 
       setCreatedUsers(result.created);
+      setBulkStep('done');
       setMessage(`成功创建 ${result.created.length} 个账号${result.duplicates.length ? `，跳过 ${result.duplicates.length} 个重复邮箱` : ''}`);
       await refresh();
     } catch (err) {
@@ -367,7 +399,16 @@ export function AccountManagement() {
             <button className="ghost-button" type="button" onClick={() => void handleExport()} disabled={busy}>
               ⇩ 导出用户
             </button>
-            <button className="primary-button" type="button" onClick={() => setShowBulkModal(true)}>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => {
+                setBulkStep('form');
+                setBulkPreview(null);
+                setCreatedUsers([]);
+                setShowBulkModal(true);
+              }}
+            >
               + 批量创建用户
             </button>
           </div>
@@ -615,74 +656,144 @@ export function AccountManagement() {
         </section>
 
       {showBulkModal ? (
-        <div className="modal-backdrop" onClick={() => setShowBulkModal(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-backdrop" onClick={closeBulkModal}>
+          <div
+            className={bulkStep === 'preview' ? 'modal modal-wide' : 'modal'}
+            onClick={(event) => event.stopPropagation()}
+          >
             <h2>批量创建用户</h2>
-            <p>直接写入 LibreChat `users` 集合，密码使用 bcrypt 加密，账号可立即登录。</p>
-            <form className="modal-form" onSubmit={handleBulkCreate}>
-              <label>
-                账号前缀
-                <input value={bulkForm.prefix} onChange={(event) => setBulkForm({ ...bulkForm, prefix: event.target.value })} />
-              </label>
-              <label>
-                邮箱域名
-                <input value={bulkForm.domain} onChange={(event) => setBulkForm({ ...bulkForm, domain: event.target.value })} />
-              </label>
-              <label>
-                创建数量
-                <input
-                  min={1}
-                  max={1000}
-                  type="number"
-                  value={bulkForm.count}
-                  onChange={(event) => setBulkForm({ ...bulkForm, count: Number(event.target.value) })}
+            {bulkStep === 'form' ? (
+              <>
+                <p>填写参数后生成预览，确认无误再写入数据库。</p>
+                <form className="modal-form" onSubmit={handleBulkPreview}>
+                  <label>
+                    账号前缀
+                    <input value={bulkForm.prefix} onChange={(event) => setBulkForm({ ...bulkForm, prefix: event.target.value })} />
+                  </label>
+                  <label>
+                    邮箱域名
+                    <input value={bulkForm.domain} onChange={(event) => setBulkForm({ ...bulkForm, domain: event.target.value })} />
+                  </label>
+                  <label>
+                    创建数量
+                    <input
+                      min={1}
+                      max={1000}
+                      type="number"
+                      value={bulkForm.count}
+                      onChange={(event) => setBulkForm({ ...bulkForm, count: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    起始编号
+                    <input
+                      min={1}
+                      type="number"
+                      value={bulkForm.startIndex}
+                      onChange={(event) => setBulkForm({ ...bulkForm, startIndex: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    统一密码
+                    <input
+                      value={bulkForm.password}
+                      onChange={(event) => setBulkForm({ ...bulkForm, password: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    姓名前缀
+                    <input
+                      value={bulkForm.namePrefix}
+                      onChange={(event) => setBulkForm({ ...bulkForm, namePrefix: event.target.value })}
+                    />
+                  </label>
+                  <label className="full">
+                    Tenant ID（可选）
+                    <input
+                      value={bulkForm.tenantId}
+                      onChange={(event) => setBulkForm({ ...bulkForm, tenantId: event.target.value })}
+                    />
+                  </label>
+                  <div className="modal-actions full">
+                    <button className="ghost-button" type="button" onClick={closeBulkModal}>
+                      取消
+                    </button>
+                    <button className="primary-button" disabled={busy} type="submit">
+                      生成预览
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : null}
+
+            {bulkStep === 'preview' && bulkPreview ? (
+              <>
+                <p className="preview-summary">
+                  共 {bulkPreview.summary.total} 个账号，将创建{' '}
+                  <strong className="text-green">{bulkPreview.summary.newCount}</strong> 个，跳过{' '}
+                  <strong className="text-muted">{bulkPreview.summary.duplicateCount}</strong> 个已存在
+                </p>
+                <div className="preview-table-wrap">
+                  <table className="preview-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>用户名</th>
+                        <th>邮箱</th>
+                        <th>姓名</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkPreview.items.map((item, index) => (
+                        <tr key={item.email}>
+                          <td>{index + 1}</td>
+                          <td>{item.username}</td>
+                          <td className="mono">{item.email}</td>
+                          <td>{item.name}</td>
+                          <td>
+                            <span className={item.status === 'new' ? 'preview-tag new' : 'preview-tag dup'}>
+                              {item.status === 'new' ? '将创建' : '已存在'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="modal-actions full">
+                  <button className="ghost-button" type="button" onClick={() => setBulkStep('form')}>
+                    返回修改
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={busy || bulkPreview.summary.newCount === 0}
+                    type="button"
+                    onClick={() => void handleBulkConfirm()}
+                  >
+                    确认创建 ({bulkPreview.summary.newCount})
+                  </button>
+                </div>
+                {bulkPreview.summary.newCount === 0 ? (
+                  <p className="preview-hint">所有账号邮箱已存在，请修改参数后重新预览。</p>
+                ) : null}
+              </>
+            ) : null}
+
+            {bulkStep === 'done' ? (
+              <>
+                <p className="preview-summary success">账号已创建，可复制下方列表分发给选手。</p>
+                <textarea
+                  className="created-output"
+                  readOnly
+                  value={createdUsers.map((user) => `${user.email},${user.username},${user.password}`).join('\n')}
                 />
-              </label>
-              <label>
-                起始编号
-                <input
-                  min={1}
-                  type="number"
-                  value={bulkForm.startIndex}
-                  onChange={(event) => setBulkForm({ ...bulkForm, startIndex: Number(event.target.value) })}
-                />
-              </label>
-              <label>
-                统一密码
-                <input
-                  value={bulkForm.password}
-                  onChange={(event) => setBulkForm({ ...bulkForm, password: event.target.value })}
-                />
-              </label>
-              <label>
-                姓名前缀
-                <input
-                  value={bulkForm.namePrefix}
-                  onChange={(event) => setBulkForm({ ...bulkForm, namePrefix: event.target.value })}
-                />
-              </label>
-              <label className="full">
-                Tenant ID（可选）
-                <input
-                  value={bulkForm.tenantId}
-                  onChange={(event) => setBulkForm({ ...bulkForm, tenantId: event.target.value })}
-                />
-              </label>
-              <div className="modal-actions full">
-                <button className="ghost-button" type="button" onClick={() => setShowBulkModal(false)}>
-                  取消
-                </button>
-                <button className="primary-button" disabled={busy} type="submit">
-                  创建账号
-                </button>
-              </div>
-            </form>
-            {createdUsers.length ? (
-              <textarea
-                className="created-output"
-                readOnly
-                value={createdUsers.map((user) => `${user.email},${user.username},${user.password}`).join('\n')}
-              />
+                <div className="modal-actions full">
+                  <button className="primary-button" type="button" onClick={closeBulkModal}>
+                    完成
+                  </button>
+                </div>
+              </>
             ) : null}
           </div>
         </div>

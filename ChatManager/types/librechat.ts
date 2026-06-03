@@ -32,6 +32,30 @@ export type UsersListResponse = {
   stats: UserStats;
 };
 
+export type BulkCreateInput = {
+  prefix: string;
+  domain: string;
+  count: number;
+  startIndex: number;
+  password: string;
+  namePrefix: string;
+  role: string;
+  emailVerified: boolean;
+  tenantId?: string;
+};
+
+export type BulkCreatePreviewItem = {
+  email: string;
+  username: string;
+  name: string;
+  status: 'new' | 'duplicate';
+};
+
+export type BulkCreatePreview = {
+  items: BulkCreatePreviewItem[];
+  summary: { total: number; newCount: number; duplicateCount: number };
+};
+
 export type BulkCreateResult = {
   created: Array<{
     email: string;

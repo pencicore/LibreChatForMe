@@ -3,7 +3,109 @@ import { ObjectId, type Document } from 'mongodb';
 import { collections } from '@/lib/db';
 import { formatUserId as formatDisplayUserId } from '@/lib/format';
 import { escapeRegex, jsonDate, startOfToday } from '@/lib/http';
-import type { BulkCreateResult, LibreChatUser, UserStats } from '@/types/librechat';
+import type {
+  BulkCreateInput,
+  BulkCreatePreview,
+  BulkCreateResult,
+  LibreChatUser,
+  UserStats,
+} from '@/types/librechat';
+
+export type BulkCreateBody = {
+  prefix?: string;
+  domain?: string;
+  count?: number;
+  startIndex?: number;
+  password?: string;
+  namePrefix?: string;
+  role?: string;
+  emailVerified?: boolean;
+  tenantId?: string;
+};
+
+export function parseBulkCreateInput(body: BulkCreateBody): BulkCreateInput {
+  const prefix = body.prefix?.trim().toLowerCase() || 'contestant';
+  const domain = body.domain?.trim().toLowerCase() || 'competition.local';
+  const count = Number(body.count);
+  const startIndex = Number(body.startIndex || 1);
+  const password = body.password?.trim() ?? '';
+
+  if (!Number.isInteger(count) || count < 1 || count > 1000) {
+    throw new Error('count must be an integer between 1 and 1000');
+  }
+
+  if (!Number.isInteger(startIndex) || startIndex < 1) {
+    throw new Error('startIndex must be a positive integer');
+  }
+
+  if (!password || password.length < 8 || password.length > 128) {
+    throw new Error('password must be 8-128 characters');
+  }
+
+  return {
+    prefix,
+    domain,
+    count,
+    startIndex,
+    password,
+    namePrefix: body.namePrefix?.trim() || '选手 ',
+    role: body.role?.trim() || 'USER',
+    emailVerified: body.emailVerified ?? true,
+    tenantId: body.tenantId?.trim() || undefined,
+  };
+}
+
+export type CompetitionUserDraft = {
+  name: string;
+  username: string;
+  email: string;
+};
+
+export function buildCompetitionUserDrafts(input: BulkCreateInput): CompetitionUserDraft[] {
+  return Array.from({ length: input.count }, (_, index) => {
+    const serial = input.startIndex + index;
+    const username = `${input.prefix}${serial}`;
+
+    return {
+      name: `${input.namePrefix}${serial}`,
+      username,
+      email: `${username}@${input.domain}`.toLowerCase(),
+    };
+  });
+}
+
+async function findExistingEmails(emails: string[]) {
+  if (emails.length === 0) {
+    return new Set<string>();
+  }
+
+  const { users } = await collections();
+  const existing = await users.find({ email: { $in: emails } }, { projection: { email: 1 } }).toArray();
+  return new Set(existing.map((doc) => String(doc.email)));
+}
+
+export async function previewCompetitionUsers(input: BulkCreateInput): Promise<BulkCreatePreview> {
+  const drafts = buildCompetitionUserDrafts(input);
+  const existingEmails = await findExistingEmails(drafts.map((doc) => doc.email));
+
+  const items = drafts.map((doc) => ({
+    email: doc.email,
+    username: doc.username,
+    name: doc.name,
+    status: existingEmails.has(doc.email) ? ('duplicate' as const) : ('new' as const),
+  }));
+
+  const duplicateCount = items.filter((item) => item.status === 'duplicate').length;
+
+  return {
+    items,
+    summary: {
+      total: items.length,
+      newCount: items.length - duplicateCount,
+      duplicateCount,
+    },
+  };
+}
 
 type RawUser = {
   _id: ObjectId;
@@ -188,51 +290,36 @@ export async function listUsers(options: {
   };
 }
 
-export async function createCompetitionUsers(input: {
-  prefix: string;
-  domain: string;
-  count: number;
-  startIndex: number;
-  password: string;
-  namePrefix: string;
-  role: string;
-  emailVerified: boolean;
-  tenantId?: string;
-}): Promise<BulkCreateResult> {
+export async function createCompetitionUsers(input: BulkCreateInput): Promise<BulkCreateResult> {
   const { users } = await collections();
   const now = new Date();
   const passwordHash = await bcrypt.hash(input.password, 10);
+  const drafts = buildCompetitionUserDrafts(input);
 
-  const docs = Array.from({ length: input.count }, (_, index) => {
-    const serial = input.startIndex + index;
-    const username = `${input.prefix}${serial}`;
-
-    return {
-      name: `${input.namePrefix}${serial}`,
-      username,
-      email: `${username}@${input.domain}`.toLowerCase(),
-      emailVerified: input.emailVerified,
-      disabled: false,
-      password: passwordHash,
-      provider: 'local',
-      role: input.role,
-      termsAccepted: true,
-      personalization: { memories: true },
-      favorites: [],
-      refreshToken: [],
-      ...(input.tenantId ? { tenantId: input.tenantId } : {}),
-      createdAt: now,
-      updatedAt: now,
-    };
-  });
-
-  if (docs.length === 0) {
+  if (drafts.length === 0) {
     return { created: [], duplicates: [] };
   }
 
-  const emails = docs.map((doc) => doc.email);
-  const existing = await users.find({ email: { $in: emails } }, { projection: { email: 1 } }).toArray();
-  const existingEmails = new Set(existing.map((doc) => String(doc.email)));
+  const existingEmails = await findExistingEmails(drafts.map((doc) => doc.email));
+
+  const docs = drafts.map((draft) => ({
+    name: draft.name,
+    username: draft.username,
+    email: draft.email,
+    emailVerified: input.emailVerified,
+    disabled: false,
+    password: passwordHash,
+    provider: 'local',
+    role: input.role,
+    termsAccepted: true,
+    personalization: { memories: true },
+    favorites: [],
+    refreshToken: [],
+    ...(input.tenantId ? { tenantId: input.tenantId } : {}),
+    createdAt: now,
+    updatedAt: now,
+  }));
+
   const creatable = docs.filter((doc) => !existingEmails.has(doc.email));
 
   if (creatable.length > 0) {
