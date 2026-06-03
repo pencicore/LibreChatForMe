@@ -66,7 +66,10 @@ npm run flush-cache
 ![对话管理界面](ChatManager/image/manager-chat.png)
 
 **禁用账号**
+<video src="https://github.com/pencicore/LibreChatForMe/raw/refs/heads/main/ChatManager/image/skill-ban-user.mp4" controls width="600"></video>
 
 **批量生产账号**
+<video src="https://github.com/pencicore/LibreChatForMe/raw/refs/heads/main/ChatManager/image/skill-batch-add-user.mp4" controls width="600"></video>
 
 **导出全部聊天记录**
+<video src="https://github.com/pencicore/LibreChatForMe/raw/refs/heads/main/ChatManager/image/skill-export-chat-history.mp4" controls width="600"></video>
