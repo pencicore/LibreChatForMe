@@ -245,6 +245,22 @@ button:disabled {
   display: grid;
 }
 
+.admin-chip-button {
+  align-items: center;
+  gap: 8px;
+  display: flex;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-chip-button:hover {
+  color: #1262ff;
+}
+
 .page-heading {
   justify-content: space-between;
   align-items: flex-start;

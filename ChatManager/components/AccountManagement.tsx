@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BulkCreatePreview, BulkCreateResult, LibreChatUser, UserStats } from '@/types/librechat';
 import { AppShell } from '@/components/AppShell';
+import { apiFetch } from '@/lib/api-client';
 import { formatDateTime, formatUserId } from '@/lib/format';
 import './account-management.css';
 
@@ -119,24 +120,6 @@ export function AccountManagement() {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const allSelected = users.length > 0 && selectedIds.length === users.length;
-
-  const apiFetch = useCallback(async <T,>(url: string, init?: RequestInit): Promise<T> => {
-    const response = await fetch(url, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
-      cache: 'no-store',
-    });
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error((data as { error?: string }).error ?? '请求失败');
-    }
-
-    return data as T;
-  }, []);
 
   const loadUsers = useCallback(async () => {
     const params = new URLSearchParams({
@@ -355,7 +338,7 @@ export function AccountManagement() {
       params.set('dateRange', dateFilter);
     }
 
-    const response = await fetch(`/api/users/export?${params}`);
+    const response = await fetch(`/api/users/export?${params}`, { credentials: 'include' });
     if (!response.ok) {
       const data = await response.json();
       setError((data as { error?: string }).error ?? '导出失败');
@@ -381,7 +364,11 @@ export function AccountManagement() {
       formData.append('file', file);
       formData.append('defaultPassword', bulkForm.password);
 
-      const response = await fetch('/api/users/import', { method: 'POST', body: formData });
+      const response = await fetch('/api/users/import', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
       const data = await response.json();
 
       if (!response.ok) {

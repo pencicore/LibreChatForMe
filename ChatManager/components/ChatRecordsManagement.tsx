@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { MessageBody } from '@/components/MessageBody';
+import { apiFetch } from '@/lib/api-client';
 import { formatCount, formatDateTime, formatTime, formatUserId } from '@/lib/format';
 import type {
   ConversationDetail,
@@ -54,19 +55,6 @@ export function ChatRecordsManagement() {
   const [tagInput, setTagInput] = useState('');
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
-
-  const apiFetch = useCallback(async <T,>(url: string, init?: RequestInit): Promise<T> => {
-    const response = await fetch(url, {
-      ...init,
-      headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-      cache: 'no-store',
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error((data as { error?: string }).error ?? '请求失败');
-    }
-    return data as T;
-  }, []);
 
   const buildParams = useCallback(
     (extra?: Record<string, string>) => {
@@ -179,7 +167,9 @@ export function ChatRecordsManagement() {
   }
 
   async function handleExport() {
-    const response = await fetch(`/api/chat-records/export?${buildParams()}`);
+    const response = await fetch(`/api/chat-records/export?${buildParams()}`, {
+      credentials: 'include',
+    });
     if (!response.ok) {
       const data = await response.json();
       setError((data as { error?: string }).error ?? '导出失败');

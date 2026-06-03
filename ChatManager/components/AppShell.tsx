@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useAuth } from '@/components/AuthProvider';
 import './app-shell.css';
 
 export type AppNav = 'accounts' | 'chat-records';
@@ -11,7 +12,20 @@ type AppShellProps = {
   children: React.ReactNode;
 };
 
+function displayName(email: string, name?: string, username?: string) {
+  if (name?.trim()) {
+    return name.trim();
+  }
+  if (username?.trim()) {
+    return username.trim();
+  }
+  return email.split('@')[0] ?? 'Admin';
+}
+
 export function AppShell({ active, bellCount = 2, children }: AppShellProps) {
+  const { user, logout, authRequired } = useAuth();
+  const label = user ? displayName(user.email, user.name, user.username) : 'Admin';
+  const initial = label.charAt(0).toUpperCase();
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -54,10 +68,19 @@ export function AppShell({ active, bellCount = 2, children }: AppShellProps) {
           <button className="bell-button" type="button" aria-label="通知">
             ⌁<span>{bellCount}</span>
           </button>
-          <div className="admin-chip">
-            <span>A</span>
-            Admin ⌄
-          </div>
+          {authRequired && user ? (
+            <div className="admin-chip">
+              <button className="admin-chip-button" onClick={() => void logout()} type="button">
+                <span>{initial}</span>
+                {label} · 退出
+              </button>
+            </div>
+          ) : (
+            <div className="admin-chip">
+              <span>{initial}</span>
+              {label}
+            </div>
+          )}
         </header>
         {children}
       </main>
