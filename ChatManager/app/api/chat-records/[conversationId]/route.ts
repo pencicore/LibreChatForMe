@@ -14,7 +14,7 @@ export async function GET(request: Request, context: RouteContext) {
   const { conversationId } = await context.params;
   const { searchParams } = new URL(request.url);
   const messagePage = parsePositiveInt(searchParams.get('messagePage'), 1, 10000);
-  const messageLimit = parsePositiveInt(searchParams.get('messageLimit'), 20, 100);
+  const messageLimit = parsePositiveInt(searchParams.get('messageLimit'), 20, 500);
 
   const detail = await getConversationDetail(conversationId, messagePage, messageLimit);
 

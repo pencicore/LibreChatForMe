@@ -416,7 +416,7 @@ export function AccountManagement() {
   }
 
   return (
-    <AppShell active="accounts" bellCount={3}>
+    <AppShell active="accounts">
         <section className="page-heading">
           <div>
             <h1>账户管理</h1>

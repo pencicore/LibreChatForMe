@@ -5,7 +5,14 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { MessageBody } from '@/components/MessageBody';
 import { apiFetch } from '@/lib/api-client';
-import { formatCount, formatDateTime, formatTime, formatUserId } from '@/lib/format';
+import {
+  avatarColorIndex,
+  displayInitials,
+  formatCount,
+  formatDateTime,
+  formatTime,
+  formatUserId,
+} from '@/lib/format';
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -17,8 +24,18 @@ import type {
 import './chat-records.css';
 
 function convoInitials(item: ConversationListItem) {
-  const source = item.username || item.email || item.title || 'CH';
-  return source.slice(0, 2).toUpperCase();
+  const username = item.username?.trim();
+  if (username) {
+    return displayInitials(username);
+  }
+  const emailLocal = item.email?.split('@')[0]?.trim();
+  if (emailLocal) {
+    return displayInitials(emailLocal);
+  }
+  if (item.title?.trim()) {
+    return displayInitials(item.title);
+  }
+  return 'CH';
 }
 
 function defaultDateRange() {
@@ -41,7 +58,6 @@ export function ChatRecordsManagement() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
-  const [messagePage, setMessagePage] = useState(1);
   const [tab, setTab] = useState<ConversationTab>('ALL');
   const [query, setQuery] = useState('');
   const [userId, setUserId] = useState('ALL');
@@ -108,21 +124,20 @@ export function ChatRecordsManagement() {
     );
   }, [apiFetch, buildParams]);
 
-  const loadDetail = useCallback(async (conversationId: string, msgPage: number) => {
+  const loadDetail = useCallback(async (conversationId: string) => {
     if (!conversationId) {
       setDetail(null);
       return;
     }
     const params = new URLSearchParams({
-      messagePage: String(msgPage),
-      messageLimit: '20',
+      messagePage: '1',
+      messageLimit: '500',
     });
     const data = await apiFetch<{ conversation: ConversationDetail }>(
       `/api/chat-records/${encodeURIComponent(conversationId)}?${params}`,
     );
     setDetail(data.conversation);
     setNotesDraft(data.conversation.chatManagerNotes ?? '');
-    setMessagePage(data.conversation.messagePage);
   }, [apiFetch]);
 
   const refresh = useCallback(async () => {
@@ -147,9 +162,9 @@ export function ChatRecordsManagement() {
 
   useEffect(() => {
     if (selectedId) {
-      void loadDetail(selectedId, messagePage);
+      void loadDetail(selectedId);
     }
-  }, [messagePage, selectedId, loadDetail]);
+  }, [selectedId, loadDetail]);
 
   function resetFilters() {
     setQuery('');
@@ -184,6 +199,34 @@ export function ChatRecordsManagement() {
     URL.revokeObjectURL(url);
   }
 
+  async function handleExportAll() {
+    setBusy(true);
+    setError('');
+    setMessage('正在导出全部聊天记录，请稍候…');
+    try {
+      const response = await fetch('/api/chat-records/export-all', { credentials: 'include' });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? '导出失败');
+        setMessage('');
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `chat-records-all-${Date.now()}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage('全部聊天记录已导出');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '导出失败');
+      setMessage('');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveMeta(patch: { tags?: string[]; chatManagerNotes?: string; archived?: boolean }) {
     if (!selectedId) {
       return;
@@ -196,7 +239,7 @@ export function ChatRecordsManagement() {
         body: JSON.stringify(patch),
       });
       setMessage('会话信息已保存');
-      await Promise.all([refresh(), loadDetail(selectedId, messagePage)]);
+      await Promise.all([refresh(), loadDetail(selectedId)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败');
     } finally {
@@ -258,6 +301,9 @@ export function ChatRecordsManagement() {
           <div className="filter-actions">
             <button className="ghost-button" type="button" onClick={() => void handleExport()} disabled={busy}>
               ⇩ 导出记录
+            </button>
+            <button className="ghost-button" type="button" onClick={() => void handleExportAll()} disabled={busy}>
+              ⇩ 导出全部聊天记录
             </button>
           </div>
         </section>
@@ -350,24 +396,24 @@ export function ChatRecordsManagement() {
               {conversations.length === 0 ? (
                 <div className="empty-state">暂无会话记录</div>
               ) : (
-                conversations.map((item, index) => (
+                conversations.map((item) => (
                   <button
                     key={item.conversationId}
                     className={item.conversationId === selectedId ? 'convo-item active' : 'convo-item'}
                     type="button"
-                    onClick={() => {
-                      setSelectedId(item.conversationId);
-                      setMessagePage(1);
-                    }}
+                    onClick={() => setSelectedId(item.conversationId)}
                   >
-                    <span className={`avatar color-${index % 6}`}>{convoInitials(item)}</span>
+                    <span
+                      className={`avatar color-${avatarColorIndex(item.userId || item.conversationId)}`}
+                    >
+                      {convoInitials(item)}
+                    </span>
                     <div className="convo-item-body">
                       <strong>{item.title}</strong>
                       <small>{item.lastMessagePreview || '暂无消息预览'}</small>
                     </div>
                     <div className="convo-item-meta">
                       <time>{formatTime(item.lastMessageAt)}</time>
-                      <span className="convo-badge">{item.messageCount}</span>
                     </div>
                   </button>
                 ))
@@ -398,34 +444,6 @@ export function ChatRecordsManagement() {
               <div className="empty-state">请选择左侧会话查看消息详情</div>
             ) : (
               <>
-                <header className="messages-header">
-                  <h2>{detail.title}</h2>
-                  <div className="messages-meta">
-                    <span title={detail.email}>用户：{detail.username || detail.email || detail.userId}</span>
-                    <span>创建：{formatDateTime(detail.createdAt)}</span>
-                    <span>最新：{formatDateTime(detail.lastMessageAt)}</span>
-                    <span>消息数：{detail.messageTotal}</span>
-                    {detail.model ? <span title={detail.model}>模型：{detail.model}</span> : null}
-                  </div>
-                  <div className="messages-header-actions">
-                    {detail.userId ? (
-                      <Link className="ghost-button" href="/">
-                        查看用户
-                      </Link>
-                    ) : null}
-                    <button
-                      className="ghost-button"
-                      type="button"
-                      onClick={() => void saveMeta({ archived: !detail.archived })}
-                    >
-                      {detail.archived ? '取消归档' : '归档会话'}
-                    </button>
-                    <button className="danger-button" type="button" onClick={() => void handleDeleteConversation()}>
-                      删除会话
-                    </button>
-                  </div>
-                </header>
-
                 <div className="message-feed">
                   {detail.messages.map((msg: LibreChatMessage, index) => (
                     <article
@@ -453,26 +471,6 @@ export function ChatRecordsManagement() {
                     </article>
                   ))}
                 </div>
-
-                <footer className="message-nav">
-                  <button
-                    type="button"
-                    disabled={messagePage <= 1}
-                    onClick={() => setMessagePage((value) => Math.max(1, value - 1))}
-                  >
-                    ‹
-                  </button>
-                  <span>
-                    {messagePage} / {detail.messagePages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={messagePage >= detail.messagePages}
-                    onClick={() => setMessagePage((value) => value + 1)}
-                  >
-                    ›
-                  </button>
-                </footer>
               </>
             )}
           </section>
@@ -524,6 +522,29 @@ export function ChatRecordsManagement() {
                   <span className={detail.archived ? 'status-pill archived' : 'status-pill'}>
                     ● {detail.archived ? '已归档' : '活跃'}
                   </span>
+                </div>
+                <div className="detail-actions">
+                  {detail.userId ? (
+                    <Link className="ghost-button" href="/">
+                      查看用户
+                    </Link>
+                  ) : null}
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveMeta({ archived: !detail.archived })}
+                  >
+                    {detail.archived ? '取消归档' : '归档会话'}
+                  </button>
+                  <button
+                    className="danger-button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleDeleteConversation()}
+                  >
+                    删除会话
+                  </button>
                 </div>
                 <div className="detail-field">
                   <label>标签</label>

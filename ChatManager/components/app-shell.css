@@ -135,6 +135,10 @@
   height: 52px;
   padding: 0 20px;
   display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  flex-shrink: 0;
 }
 
 .heading-actions,
@@ -199,32 +203,6 @@ button:disabled {
   color: #e11d2e;
   background: #fff1f0;
   border-color: #ff4d4f;
-}
-
-.bell-button {
-  background: none;
-  border: 0;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  font-size: 18px;
-  display: grid;
-  position: relative;
-}
-
-.bell-button span {
-  color: #fff;
-  background: #ff1f3d;
-  border-radius: 999px;
-  place-items: center;
-  width: 14px;
-  height: 14px;
-  font-size: 9px;
-  display: grid;
-  position: absolute;
-  top: 2px;
-  right: 2px;
 }
 
 .admin-chip {

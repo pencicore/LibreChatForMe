@@ -8,7 +8,6 @@ export type AppNav = 'accounts' | 'chat-records';
 
 type AppShellProps = {
   active: AppNav;
-  bellCount?: number;
   children: React.ReactNode;
 };
 
@@ -22,7 +21,7 @@ function displayName(email: string, name?: string, username?: string) {
   return email.split('@')[0] ?? 'Admin';
 }
 
-export function AppShell({ active, bellCount = 2, children }: AppShellProps) {
+export function AppShell({ active, children }: AppShellProps) {
   const { user, logout, authRequired } = useAuth();
   const label = user ? displayName(user.email, user.name, user.username) : 'Admin';
   const initial = label.charAt(0).toUpperCase();
@@ -65,9 +64,6 @@ export function AppShell({ active, bellCount = 2, children }: AppShellProps) {
 
       <main className="main-panel">
         <header className="global-header">
-          <button className="bell-button" type="button" aria-label="通知">
-            ⌁<span>{bellCount}</span>
-          </button>
           {authRequired && user ? (
             <div className="admin-chip">
               <button className="admin-chip-button" onClick={() => void logout()} type="button">
