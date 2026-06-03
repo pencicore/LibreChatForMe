@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
 import './app-shell.css';
 
-export type AppNav = 'accounts' | 'chat-records';
+export type AppNav = 'dashboard' | 'accounts' | 'chat-records';
 
 type AppShellProps = {
   active: AppNav;
@@ -36,7 +36,9 @@ export function AppShell({ active, children }: AppShellProps) {
           </div>
         </div>
         <nav className="nav-section">
-          <span className="nav-link muted">⌂ 仪表盘</span>
+          <Link className={active === 'dashboard' ? 'nav-link active' : 'nav-link'} href="/dashboard">
+            ⌂ 仪表盘
+          </Link>
           <small>管理</small>
           <Link className={active === 'accounts' ? 'nav-link active' : 'nav-link'} href="/">
             ♚ 账户管理

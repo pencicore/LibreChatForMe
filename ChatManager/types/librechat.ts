@@ -117,3 +117,35 @@ export type ConversationDetail = ConversationListItem & {
   messagePages: number;
   messageTotal: number;
 };
+
+export type DashboardGranularity = 'minute' | 'hour' | 'day' | 'week';
+
+export type DashboardUserSlice = {
+  userId: string;
+  label: string;
+  tokens: number;
+  percentage: number;
+};
+
+export type DashboardStats = {
+  summary: {
+    totalTokens: number;
+    activeUsers: number;
+    totalSessions: number;
+    modelCount: number;
+  };
+  tokenTrend: Array<{ date: string; tokens: number }>;
+  userDistribution: {
+    total: number;
+    top: DashboardUserSlice[];
+    others: { tokens: number; percentage: number } | null;
+  };
+  modelUsage: Array<{ model: string; tokens: number }>;
+  tokensPerSession: Array<{
+    userId: string;
+    label: string;
+    tokens: number;
+    sessions: number;
+    ratio: number;
+  }>;
+};

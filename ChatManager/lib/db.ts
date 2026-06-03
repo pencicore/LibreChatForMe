@@ -61,5 +61,7 @@ export async function collections() {
     logs: db.collection('logs'),
     /** 旧版 ChatManager 误写的封禁记录，迁移后删除 */
     legacyKeyv: db.collection('keyv'),
+    /** LibreChat token 消耗记录 */
+    transactions: db.collection('transactions'),
   };
 }

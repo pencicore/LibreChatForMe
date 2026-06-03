@@ -66,3 +66,36 @@ export function formatTime(value?: string | Date) {
     minute: '2-digit',
   }).format(new Date(value));
 }
+
+export function formatCompactNumber(value?: number | null) {
+  if (value == null || Number.isNaN(value)) {
+    return '0';
+  }
+
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  }
+  if (abs >= 1_000) {
+    return `${(value / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}K`;
+  }
+
+  return formatCount(value);
+}
+
+export function formatPercent(value?: number | null, digits = 1) {
+  if (value == null || Number.isNaN(value)) {
+    return '0%';
+  }
+
+  return `${value.toFixed(digits)}%`;
+}
+
+export function truncateLabel(value: string, max = 14) {
+  const trimmed = value.trim();
+  if (trimmed.length <= max) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, max - 1)}…`;
+}
