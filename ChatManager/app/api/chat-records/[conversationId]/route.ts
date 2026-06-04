@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
+import { getAdminForOperationLog, logAdminOperation } from '@/lib/admin-operation-logs';
 import { requireAdminToken } from '@/lib/auth';
-import { deleteConversation, getConversationDetail, updateConversationMeta } from '@/lib/conversations';
+import {
+  deleteConversation,
+  getConversationAuditLabel,
+  getConversationDetail,
+  updateConversationMeta,
+} from '@/lib/conversations';
 import { parsePositiveInt } from '@/lib/http';
 
 type RouteContext = { params: Promise<{ conversationId: string }> };
@@ -44,16 +50,41 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
   }
 
+  if (typeof body.archived === 'boolean') {
+    await logAdminOperation({
+      request,
+      admin: getAdminForOperationLog(request),
+      action: body.archived ? 'CONVERSATION_ARCHIVE' : 'CONVERSATION_UNARCHIVE',
+      targetType: 'conversation',
+      targetId: conversationId,
+      details: {
+        archived: body.archived,
+        conversationTitle: typeof result.title === 'string' ? result.title : undefined,
+      },
+    });
+  }
+
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
-  const unauthorized = requireAdminToken(_request);
+export async function DELETE(request: Request, context: RouteContext) {
+  const unauthorized = requireAdminToken(request);
   if (unauthorized) {
     return unauthorized;
   }
 
   const { conversationId } = await context.params;
+  const conversationTitle = await getConversationAuditLabel(conversationId);
   await deleteConversation(conversationId);
+  await logAdminOperation({
+    request,
+    admin: getAdminForOperationLog(request),
+    action: 'CONVERSATION_DELETE',
+    targetType: 'conversation',
+    targetId: conversationId,
+    details: {
+      conversationTitle,
+    },
+  });
   return NextResponse.json({ ok: true });
 }

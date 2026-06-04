@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logAdminOperation } from '@/lib/admin-operation-logs';
 import { isAuthRequired } from '@/lib/auth';
 import { loginAdmin } from '@/lib/librechat-auth';
 import { clearSessionCookieOptions, SESSION_COOKIE, sessionCookieOptions } from '@/lib/session';
@@ -31,6 +32,17 @@ export async function POST(request: Request) {
       { status: result.status },
     );
   }
+
+  await logAdminOperation({
+    request,
+    admin: result.user,
+    action: 'ADMIN_LOGIN',
+    targetType: 'auth',
+    targetId: result.user.id,
+    details: {
+      email: result.user.email,
+    },
+  });
 
   const response = NextResponse.json({ user: result.user });
   response.cookies.set(

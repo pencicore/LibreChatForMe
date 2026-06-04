@@ -63,5 +63,7 @@ export async function collections() {
     legacyKeyv: db.collection('keyv'),
     /** LibreChat token 消耗记录 */
     transactions: db.collection('transactions'),
+    /** ChatManager 管理员操作审计日志 */
+    adminOperationLogs: db.collection('admin_operation_logs'),
   };
 }

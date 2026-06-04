@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
+import { getAdminForOperationLog, logAdminOperation } from '@/lib/admin-operation-logs';
 import { requireAdminToken } from '@/lib/auth';
 import {
   buildConversationSearch,
   conversationsToCsv,
   deleteConversation,
+  getConversationAuditLabel,
   getConversationStats,
   listConversations,
 } from '@/lib/conversations';
@@ -59,6 +61,17 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'conversationId is required' }, { status: 400 });
   }
 
+  const conversationTitle = await getConversationAuditLabel(body.conversationId.trim());
   await deleteConversation(body.conversationId.trim());
+  await logAdminOperation({
+    request,
+    admin: getAdminForOperationLog(request),
+    action: 'CONVERSATION_DELETE',
+    targetType: 'conversation',
+    targetId: body.conversationId.trim(),
+    details: {
+      conversationTitle,
+    },
+  });
   return NextResponse.json({ ok: true });
 }

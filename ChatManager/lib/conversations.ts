@@ -325,6 +325,17 @@ export async function getConversationDetail(
   };
 }
 
+export async function getConversationAuditLabel(conversationId: string) {
+  const { conversations } = await collections();
+  const convo = await conversations.findOne(
+    { conversationId },
+    { projection: { title: 1 } },
+  );
+
+  const title = typeof convo?.title === 'string' ? convo.title.trim() : '';
+  return title || '未命名会话';
+}
+
 export async function updateConversationMeta(
   conversationId: string,
   update: { tags?: string[]; chatManagerNotes?: string; archived?: boolean },

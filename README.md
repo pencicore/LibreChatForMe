@@ -31,8 +31,6 @@ npm run frontend:dev
 
 ### 扩展功能项目（ChatManager）
 
-比赛用户批量创建与管理，**直接读写 LibreChat 的 MongoDB `users` 集合**。
-
 安装依赖
 ```shell
 cd ChatManager

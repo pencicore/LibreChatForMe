@@ -1,0 +1,209 @@
+import type { SessionUser } from '@/lib/librechat-auth';
+import { getSessionUser } from '@/lib/auth';
+import { collections } from '@/lib/db';
+
+export type AdminOperationAction =
+  | 'ADMIN_LOGIN'
+  | 'USER_BULK_CREATE'
+  | 'USER_DISABLE'
+  | 'USER_ENABLE'
+  | 'USER_UPDATE'
+  | 'USER_DELETE'
+  | 'CONVERSATION_DELETE'
+  | 'CONVERSATION_ARCHIVE'
+  | 'CONVERSATION_UNARCHIVE';
+
+export type AdminOperationTargetType = 'auth' | 'user' | 'conversation';
+
+type LogAdminOperationInput = {
+  request: Request;
+  admin: SessionUser;
+  action: AdminOperationAction;
+  targetType: AdminOperationTargetType;
+  targetId?: string;
+  targetIds?: string[];
+  details?: Record<string, unknown>;
+  description?: string;
+};
+
+function getClientIp(request: Request) {
+  const forwardedFor = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  return (
+    forwardedFor ||
+    request.headers.get('x-real-ip')?.trim() ||
+    request.headers.get('cf-connecting-ip')?.trim() ||
+    undefined
+  );
+}
+
+function adminLabel(admin: SessionUser) {
+  return admin.email || admin.username || admin.name || admin.id;
+}
+
+function countTargets(input: LogAdminOperationInput) {
+  return input.targetIds?.length ?? (input.targetId ? 1 : 0);
+}
+
+function detailNumber(details: Record<string, unknown> | undefined, key: string) {
+  const value = details?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function detailText(details: Record<string, unknown> | undefined, key: string) {
+  const value = details?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function detailTextArray(details: Record<string, unknown> | undefined, key: string) {
+  const value = details?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function formatReadableList(items: string[], total: number, fallback: string) {
+  if (items.length === 0) {
+    return fallback;
+  }
+
+  const visible = items.slice(0, 5);
+  const suffix = total > visible.length ? `等 ${total} 个` : '';
+  return `${visible.join('、')}${suffix}`;
+}
+
+function accountLabel(details: Record<string, unknown> | undefined) {
+  return (
+    detailText(details, 'accountLabel') ||
+    detailText(details, 'email') ||
+    detailText(details, 'username') ||
+    detailText(details, 'name') ||
+    '该账户'
+  );
+}
+
+function accountListLabel(details: Record<string, unknown> | undefined, total: number) {
+  return formatReadableList(detailTextArray(details, 'accountLabels'), total, '所选账户');
+}
+
+function conversationLabel(details: Record<string, unknown> | undefined) {
+  return detailText(details, 'conversationTitle') || detailText(details, 'title') || '指定会话';
+}
+
+export function buildAdminOperationDescription(input: LogAdminOperationInput) {
+  const admin = adminLabel(input.admin);
+  const targetCount = countTargets(input);
+  const details = input.details;
+  const target = targetCount > 1 ? accountListLabel(details, targetCount) : accountLabel(details);
+
+  switch (input.action) {
+    case 'ADMIN_LOGIN':
+      return `管理员 ${admin} 登录 ChatManager`;
+    case 'USER_BULK_CREATE': {
+      const createdCount = detailNumber(details, 'createdCount');
+      const duplicateCount = detailNumber(details, 'duplicateCount');
+      const skippedCount = detailNumber(details, 'skippedCount');
+      const source = detailText(details, 'source') === 'csv_import' ? '通过 CSV 导入' : '通过批量创建';
+      const suffix =
+        skippedCount > 0
+          ? `，跳过 ${skippedCount} 个账户`
+          : duplicateCount > 0
+            ? `，重复 ${duplicateCount} 个账户`
+            : '';
+      return `管理员 ${admin} ${source}创建了 ${createdCount} 个账户${suffix}`;
+    }
+    case 'USER_DISABLE':
+      return `管理员 ${admin} 禁用了账户 ${target}`;
+    case 'USER_ENABLE':
+      return `管理员 ${admin} 解除了账户 ${target} 的禁用`;
+    case 'USER_UPDATE': {
+      const fields = Array.isArray(details?.changedFields)
+        ? details.changedFields.filter((field): field is string => typeof field === 'string')
+        : [];
+      const fieldText = fields.length > 0 ? `，修改字段：${fields.join('、')}` : '';
+      return `管理员 ${admin} 修改了账户 ${target}${fieldText}`;
+    }
+    case 'USER_DELETE':
+      return `管理员 ${admin} 删除了账户 ${target}`;
+    case 'CONVERSATION_DELETE':
+      return `管理员 ${admin} 删除了会话「${conversationLabel(details)}」`;
+    case 'CONVERSATION_ARCHIVE':
+      return `管理员 ${admin} 归档了会话「${conversationLabel(details)}」`;
+    case 'CONVERSATION_UNARCHIVE':
+      return `管理员 ${admin} 取消归档了会话「${conversationLabel(details)}」`;
+    default:
+      return `管理员 ${admin} 执行了操作 ${input.action}`;
+  }
+}
+
+let indexesReady: Promise<void> | null = null;
+
+async function ensureAdminOperationLogIndexes() {
+  if (!indexesReady) {
+    indexesReady = collections().then(async ({ adminOperationLogs }) => {
+      await Promise.all([
+        adminOperationLogs.createIndex({ createdAt: -1 }),
+        adminOperationLogs.createIndex({ action: 1, createdAt: -1 }),
+        adminOperationLogs.createIndex({ 'admin.id': 1, createdAt: -1 }),
+        adminOperationLogs.createIndex({ targetType: 1, targetId: 1, createdAt: -1 }),
+      ]);
+    });
+  }
+
+  await indexesReady;
+}
+
+export async function logAdminOperation(input: LogAdminOperationInput) {
+  const { adminOperationLogs } = await collections();
+  const now = new Date();
+
+  await ensureAdminOperationLogIndexes();
+  const description = input.description ?? buildAdminOperationDescription(input);
+  await adminOperationLogs.insertOne({
+    action: input.action,
+    description,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    targetIds: input.targetIds,
+    admin: {
+      id: input.admin.id,
+      email: input.admin.email,
+      name: input.admin.name,
+      username: input.admin.username,
+      role: input.admin.role,
+    },
+    details: input.details ?? {},
+    ip: getClientIp(input.request),
+    userAgent: input.request.headers.get('user-agent') ?? undefined,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export function getAdminForOperationLog(request: Request): SessionUser {
+  return (
+    getSessionUser(request) ?? {
+      id: 'auth-disabled',
+      email: 'auth-disabled',
+      name: 'Auth Disabled',
+      role: 'ADMIN',
+    }
+  );
+}
+
+export function redactBulkCreateDetails(details: {
+  created?: Array<{ email: string; username: string; name?: string }>;
+  duplicates?: Array<{ email: string; username: string }>;
+}) {
+  return {
+    createdCount: details.created?.length ?? 0,
+    duplicateCount: details.duplicates?.length ?? 0,
+    createdSample: details.created?.slice(0, 20).map(({ email, username, name }) => ({
+      email,
+      username,
+      name,
+    })) ?? [],
+    duplicateSample: details.duplicates?.slice(0, 20) ?? [],
+  };
+}

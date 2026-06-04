@@ -1,7 +1,8 @@
 import { ObjectId } from 'mongodb';
 import { NextResponse } from 'next/server';
+import { getAdminForOperationLog, logAdminOperation } from '@/lib/admin-operation-logs';
 import { requireAdminToken } from '@/lib/auth';
-import { deleteUsersByIds, updateUserById } from '@/lib/users';
+import { deleteUsersByIds, getUserAuditLabels, updateUserById } from '@/lib/users';
 
 export async function POST(request: Request) {
   const unauthorized = requireAdminToken(request);
@@ -20,8 +21,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No valid user ids provided' }, { status: 400 });
   }
 
+  const accountLabels = await getUserAuditLabels(ids);
+
   if (body.action === 'delete') {
     await deleteUsersByIds(ids);
+    await logAdminOperation({
+      request,
+      admin: getAdminForOperationLog(request),
+      action: 'USER_DELETE',
+      targetType: 'user',
+      targetIds: ids,
+      details: {
+        mode: 'batch',
+        affected: ids.length,
+        accountLabels,
+      },
+    });
     return NextResponse.json({ ok: true, affected: ids.length });
   }
 
@@ -33,6 +48,21 @@ export async function POST(request: Request) {
     } else if (body.action === 'verify') {
       await updateUserById(id, { emailVerified: true });
     }
+  }
+
+  if (body.action === 'disable' || body.action === 'enable') {
+    await logAdminOperation({
+      request,
+      admin: getAdminForOperationLog(request),
+      action: body.action === 'disable' ? 'USER_DISABLE' : 'USER_ENABLE',
+      targetType: 'user',
+      targetIds: ids,
+      details: {
+        mode: 'batch',
+        affected: ids.length,
+        accountLabels,
+      },
+    });
   }
 
   return NextResponse.json({ ok: true, affected: ids.length });

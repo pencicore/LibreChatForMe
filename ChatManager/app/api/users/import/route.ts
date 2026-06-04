@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getAdminForOperationLog, logAdminOperation } from '@/lib/admin-operation-logs';
 import { requireAdminToken } from '@/lib/auth';
 import { importUsersFromCsv } from '@/lib/users';
 
@@ -22,6 +23,18 @@ export async function POST(request: Request) {
 
   const content = await file.text();
   const result = await importUsersFromCsv(content, defaultPassword);
+  await logAdminOperation({
+    request,
+    admin: getAdminForOperationLog(request),
+    action: 'USER_BULK_CREATE',
+    targetType: 'user',
+    details: {
+      source: 'csv_import',
+      fileName: file.name,
+      createdCount: result.created,
+      skippedCount: result.skipped,
+    },
+  });
 
   return NextResponse.json(result, { status: 201 });
 }

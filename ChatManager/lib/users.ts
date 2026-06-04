@@ -242,6 +242,48 @@ export function mapUser(user: RawUser, extras?: { lastLoginAt?: Date; messageCou
   };
 }
 
+export function userAuditLabel(user: {
+  email?: string;
+  username?: string;
+  name?: string;
+}) {
+  return user.email || user.username || user.name || '该账户';
+}
+
+export async function getUserAuditLabels(ids: string[]) {
+  const objectIds = ids.filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+
+  if (objectIds.length === 0) {
+    return [];
+  }
+
+  const { users } = await collections();
+  const docs = await users
+    .find(
+      { _id: { $in: objectIds } },
+      { projection: { email: 1, username: 1, name: 1 } },
+    )
+    .toArray();
+
+  const labelMap = new Map(
+    docs.map((doc) => [
+      doc._id.toString(),
+      userAuditLabel({
+        email: doc.email as string | undefined,
+        username: doc.username as string | undefined,
+        name: doc.name as string | undefined,
+      }),
+    ]),
+  );
+
+  return ids.map((id) => labelMap.get(id) ?? '该账户');
+}
+
+export async function getUserAuditLabel(id: string) {
+  const [label] = await getUserAuditLabels([id]);
+  return label ?? '该账户';
+}
+
 export async function getUserStats(): Promise<UserStats> {
   const { users } = await collections();
   const today = startOfToday();
