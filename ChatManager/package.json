@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:integration": "node --test --test-concurrency=1 tests/integration/*.test.mjs"
   },
   "dependencies": {
     "archiver": "^8.0.0",
