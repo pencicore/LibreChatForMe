@@ -149,3 +149,27 @@ export type DashboardStats = {
     ratio: number;
   }>;
 };
+
+export type AdminOperationLogItem = {
+  _id: string;
+  action: string;
+  actionLabel: string;
+  module: string;
+  moduleLabel: string;
+  status: 'success' | 'failed';
+  description: string;
+  admin: {
+    id?: string;
+    email?: string;
+    name?: string;
+    username?: string;
+    role?: string;
+  };
+  targetType: string;
+  targetId?: string;
+  targetIds?: string[];
+  details: Record<string, unknown>;
+  ip?: string;
+  userAgent?: string;
+  createdAt?: string;
+};

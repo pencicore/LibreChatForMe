@@ -1,6 +1,7 @@
 import type { SessionUser } from '@/lib/librechat-auth';
 import { getSessionUser } from '@/lib/auth';
 import { collections } from '@/lib/db';
+import { escapeRegex, jsonDate } from '@/lib/http';
 
 export type AdminOperationAction =
   | 'ADMIN_LOGIN'
@@ -17,6 +18,9 @@ export type AdminOperationTargetType = 'auth' | 'user' | 'conversation';
 
 type LogAdminOperationInput = {
   request: Request;
+} & AdminOperationDescriptionInput;
+
+type AdminOperationDescriptionInput = {
   admin: SessionUser;
   action: AdminOperationAction;
   targetType: AdminOperationTargetType;
@@ -25,6 +29,47 @@ type LogAdminOperationInput = {
   details?: Record<string, unknown>;
   description?: string;
 };
+
+export type AdminOperationLogItem = {
+  _id: string;
+  action: AdminOperationAction | string;
+  actionLabel: string;
+  module: string;
+  moduleLabel: string;
+  status: 'success' | 'failed';
+  description: string;
+  admin: {
+    id?: string;
+    email?: string;
+    name?: string;
+    username?: string;
+    role?: string;
+  };
+  targetType: string;
+  targetId?: string;
+  targetIds?: string[];
+  details: Record<string, unknown>;
+  ip?: string;
+  userAgent?: string;
+  createdAt?: string;
+};
+
+const USER_ACTIONS = [
+  'ADMIN_LOGIN',
+  'USER_BULK_CREATE',
+  'USER_DISABLE',
+  'USER_ENABLE',
+  'USER_UPDATE',
+  'USER_DELETE',
+];
+
+const CONVERSATION_ACTIONS = [
+  'CONVERSATION_DELETE',
+  'CONVERSATION_ARCHIVE',
+  'CONVERSATION_UNARCHIVE',
+];
+
+const KNOWN_ACTIONS = [...USER_ACTIONS, ...CONVERSATION_ACTIONS];
 
 function getClientIp(request: Request) {
   const forwardedFor = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
@@ -40,7 +85,7 @@ function adminLabel(admin: SessionUser) {
   return admin.email || admin.username || admin.name || admin.id;
 }
 
-function countTargets(input: LogAdminOperationInput) {
+function countTargets(input: AdminOperationDescriptionInput) {
   return input.targetIds?.length ?? (input.targetId ? 1 : 0);
 }
 
@@ -91,7 +136,7 @@ function conversationLabel(details: Record<string, unknown> | undefined) {
   return detailText(details, 'conversationTitle') || detailText(details, 'title') || '指定会话';
 }
 
-export function buildAdminOperationDescription(input: LogAdminOperationInput) {
+export function buildAdminOperationDescription(input: AdminOperationDescriptionInput) {
   const admin = adminLabel(input.admin);
   const targetCount = countTargets(input);
   const details = input.details;
@@ -137,6 +182,36 @@ export function buildAdminOperationDescription(input: LogAdminOperationInput) {
   }
 }
 
+export function adminOperationActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    ADMIN_LOGIN: '登录',
+    USER_BULK_CREATE: '创建用户',
+    USER_DISABLE: '禁用用户',
+    USER_ENABLE: '解除禁用',
+    USER_UPDATE: '更新用户',
+    USER_DELETE: '删除用户',
+    CONVERSATION_DELETE: '删除会话',
+    CONVERSATION_ARCHIVE: '归档会话',
+    CONVERSATION_UNARCHIVE: '取消归档',
+  };
+
+  return labels[action] ?? action;
+}
+
+export function adminOperationModuleLabel(action: string) {
+  if (action === 'ADMIN_LOGIN') {
+    return { module: 'auth', label: '账户管理' };
+  }
+  if (action.startsWith('USER_')) {
+    return { module: 'accounts', label: '账户管理' };
+  }
+  if (action.startsWith('CONVERSATION_')) {
+    return { module: 'chat-records', label: '聊天记录' };
+  }
+
+  return { module: 'system', label: '系统' };
+}
+
 let indexesReady: Promise<void> | null = null;
 
 async function ensureAdminOperationLogIndexes() {
@@ -163,6 +238,7 @@ export async function logAdminOperation(input: LogAdminOperationInput) {
   await adminOperationLogs.insertOne({
     action: input.action,
     description,
+    status: 'success',
     targetType: input.targetType,
     targetId: input.targetId,
     targetIds: input.targetIds,
@@ -179,6 +255,150 @@ export async function logAdminOperation(input: LogAdminOperationInput) {
     createdAt: now,
     updatedAt: now,
   });
+}
+
+function mapAdminOperationLog(doc: Record<string, unknown>): AdminOperationLogItem {
+  const action = String(doc.action ?? '');
+  const moduleInfo = adminOperationModuleLabel(action);
+  const details =
+    doc.details && typeof doc.details === 'object' && !Array.isArray(doc.details)
+      ? (doc.details as Record<string, unknown>)
+      : {};
+  const admin =
+    doc.admin && typeof doc.admin === 'object' && !Array.isArray(doc.admin)
+      ? (doc.admin as AdminOperationLogItem['admin'])
+      : {};
+  const targetIds = Array.isArray(doc.targetIds)
+    ? doc.targetIds.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  const descriptionAdmin: SessionUser = {
+    id: admin.id ?? '',
+    email: admin.email || admin.username || admin.name || 'Admin',
+    name: admin.name,
+    username: admin.username,
+    role: admin.role,
+  };
+  const description = buildAdminOperationDescription({
+    admin: descriptionAdmin,
+    action: action as AdminOperationAction,
+    targetType: String(doc.targetType ?? '') as AdminOperationTargetType,
+    targetId: typeof doc.targetId === 'string' ? doc.targetId : undefined,
+    targetIds,
+    details,
+  });
+
+  return {
+    _id: String(doc._id),
+    action,
+    actionLabel: adminOperationActionLabel(action),
+    module: moduleInfo.module,
+    moduleLabel: moduleInfo.label,
+    status: doc.status === 'failed' ? 'failed' : 'success',
+    description,
+    admin,
+    targetType: String(doc.targetType ?? ''),
+    targetId: typeof doc.targetId === 'string' ? doc.targetId : undefined,
+    targetIds,
+    details,
+    ip: typeof doc.ip === 'string' ? doc.ip : undefined,
+    userAgent: typeof doc.userAgent === 'string' ? doc.userAgent : undefined,
+    createdAt: jsonDate(doc.createdAt),
+  };
+}
+
+function buildOperationLogFilter(options: {
+  q?: string | null;
+  module?: string | null;
+  action?: string | null;
+  status?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}) {
+  const filter: Record<string, unknown> = {};
+
+  if (options.q?.trim()) {
+    const pattern = new RegExp(escapeRegex(options.q.trim()), 'i');
+    filter.$or = [
+      { description: pattern },
+      { 'admin.email': pattern },
+      { 'admin.username': pattern },
+      { 'admin.name': pattern },
+      { ip: pattern },
+      { action: pattern },
+    ];
+  }
+
+  if (options.module && options.module !== 'ALL') {
+    if (options.module === 'accounts') {
+      filter.action = { $in: USER_ACTIONS };
+    } else if (options.module === 'chat-records') {
+      filter.action = { $in: CONVERSATION_ACTIONS };
+    } else if (options.module === 'system') {
+      filter.action = { $nin: KNOWN_ACTIONS };
+    }
+  }
+
+  if (options.action && options.action !== 'ALL') {
+    filter.action = options.action;
+  }
+
+  if (options.status && options.status !== 'ALL') {
+    filter.status = options.status === 'success' ? { $ne: 'failed' } : options.status;
+  }
+
+  if (options.startDate || options.endDate) {
+    const range: Record<string, Date> = {};
+    if (options.startDate) {
+      range.$gte = new Date(`${options.startDate}T00:00:00`);
+    }
+    if (options.endDate) {
+      range.$lte = new Date(`${options.endDate}T23:59:59`);
+    }
+    filter.createdAt = range;
+  }
+
+  return filter;
+}
+
+export async function listAdminOperationLogs(options: {
+  page: number;
+  limit: number;
+  q?: string | null;
+  module?: string | null;
+  action?: string | null;
+  status?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}) {
+  const { adminOperationLogs } = await collections();
+  const filter = buildOperationLogFilter(options);
+  const skip = (options.page - 1) * options.limit;
+  const [items, total] = await Promise.all([
+    adminOperationLogs.find(filter).sort({ createdAt: -1 }).skip(skip).limit(options.limit).toArray(),
+    adminOperationLogs.countDocuments(filter),
+  ]);
+
+  return {
+    logs: items.map((item) => mapAdminOperationLog(item)),
+    total,
+  };
+}
+
+export function operationLogsToCsv(items: AdminOperationLogItem[]) {
+  const header = ['time', 'admin', 'module', 'action', 'description', 'status', 'ip'];
+  const rows = items.map((item) => [
+    item.createdAt ?? '',
+    item.admin.email || item.admin.username || item.admin.name || '',
+    item.moduleLabel,
+    item.actionLabel,
+    item.description,
+    item.status === 'success' ? '成功' : '失败',
+    item.ip ?? '',
+  ]);
+
+  return [header, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
 }
 
 export function getAdminForOperationLog(request: Request): SessionUser {
